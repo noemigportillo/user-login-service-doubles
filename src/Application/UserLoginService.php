@@ -44,6 +44,16 @@ class UserLoginService
         return "Login incorrecto";
     }
 
+    public function logout(User $user): string
+    {
+        if(in_array($user, $this->loggedUsers)){
+            $this->sessionManager->logout($user->getUserName());
+            return "Ok";
+        }
+
+        return "User not found";
+    }
+
     public function getExternalSessions(): int
     {
         return $this->sessionManager->getSessions();

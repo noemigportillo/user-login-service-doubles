@@ -5,28 +5,41 @@ declare(strict_types=1);
 namespace UserLoginService\Tests\Application;
 
 use Exception;
+use Mockery;
 use PHPUnit\Framework\TestCase;
+use UserLoginService\Application\SessionManager;
 use UserLoginService\Application\UserLoginService;
 use UserLoginService\Domain\User;
-use UserLoginService\Tests\Doubles\FakeSessionManager;
-use UserLoginService\Tests\Doubles\SessionManagerDummy;
-use UserLoginService\Tests\Doubles\SessionManagerStub;
+// use UserLoginService\Tests\Doubles\FakeSessionManager;
+// use UserLoginService\Tests\Doubles\SessionManagerDummy;
+// use UserLoginService\Tests\Doubles\SessionManagerStub;
 
 final class UserLoginServiceTest extends TestCase
 {
+
+    private SessionManager $sessionManager;
+    private UserLoginService $userLoginService;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->sessionManager = Mockery::mock(SessionManager::class);
+        $this->userLoginService = new UserLoginService($this->sessionManager);
+    }
+
     /**
      * @test
      */
     public function exceptionThrownWhileManualLoginIfUserAlreadyLogged()
     {
-        $userLoginService = new UserLoginService(new SessionManagerDummy());
+        // $userLoginService = new UserLoginService(new SessionManagerDummy());
         $user = new User("username");
 
         $this->expectException(Exception::class);
         $this->expectExceptionMessage("User already logged in");
 
-        $userLoginService->manualLogin($user);
-        $userLoginService->manualLogin($user);
+        $this->userLoginService->manualLogin($user);
+        $this->userLoginService->manualLogin($user);
     }
 
     /**
@@ -35,11 +48,13 @@ final class UserLoginServiceTest extends TestCase
      */
     public function userIsManuallyLoggedIn()
     {
-        $userLoginService = new UserLoginService(new SessionManagerDummy());
+        // $userLoginService = new UserLoginService(new SessionManagerDummy());
         $user = new User("username");
+        $expectedLoggedUsers = [$user];
 
-        $userLoginService->manualLogin($user);
-        $this->assertContains($user, $userLoginService->getLoggedUsers());
+        $this->userLoginService->manualLogin($user);
+
+        $this->assertEquals($expectedLoggedUsers, $this->userLoginService->getLoggedUsers());
     }
 
     /**
@@ -47,9 +62,10 @@ final class UserLoginServiceTest extends TestCase
      */
     public function returnsNumberOfActiveSesssions()
     {
-        $userLoginService = new UserLoginService(new SessionManagerStub());
+        // $userLoginService = new UserLoginService(new SessionManagerStub());
+        $this->sessionManager->allows()->getSessions()->andReturnTrue();
 
-        $this->assertEquals(3, $userLoginService->getExternalSessions());
+        $this->assertEquals(1, $this->userLoginService->getExternalSessions());
     }
 
     /**
@@ -57,9 +73,11 @@ final class UserLoginServiceTest extends TestCase
      */
     public function userNotLoggedInExternalApi()
     {
-        $userLoginService = new UserLoginService(new FakeSessionManager());
+        // $userLoginService = new UserLoginService(new FakeSessionManager());
 
-        $loginStatus = $userLoginService->login("wrong_username", "wrong_password");
+        $this->sessionManager->allows()->login("wrong_username", "wrong_password")->andReturnFalse();
+
+        $loginStatus = $this->userLoginService->login("wrong_username", "wrong_password");
 
         $this->assertEquals("Login incorrecto", $loginStatus);
     }
@@ -69,12 +87,50 @@ final class UserLoginServiceTest extends TestCase
      */
     public function userLoggedInExternalApi()
     {
-        $userLoginService = new UserLoginService(new FakeSessionManager());
+        // $userLoginService = new UserLoginService(new FakeSessionManager());
 
         $expectedUser = new User("username");
-        $loginStatus = $userLoginService->login("username", "password");
+
+        $this->sessionManager->allows()->login("username", "password")->andReturnTrue();
+
+        $loginStatus = $this->userLoginService->login("username", "password");
 
         $this->assertEquals("Login correcto", $loginStatus);
-        $this->assertEquals($expectedUser, $userLoginService->getLoggedUsers()[0]);
+        $this->assertEquals($expectedUser, $this->userLoginService->getLoggedUsers()[0]);
+    }
+
+    /**
+     * @test
+     */
+    public function userNotLoggedOutFromLocalAndExternalSessions()
+    {
+        // $userLoginService = new UserLoginService(new FakeSessionManager());
+        $sessionManager = Mockery::spy(SessionManager::class);
+        $userLoginService = new UserLoginService($this->sessionManager);
+        $user = new User("username");
+
+        $logoutStatus = $userLoginService->logout($user);
+
+        $sessionManager->shouldNotHaveReceived()->logout($user->getUsername());
+        $this->assertEquals("User not found", $logoutStatus);
+    }
+
+    /**
+     * @test
+     */
+    public function userLoggedOutFromLocalAndExternalSessions()
+    {
+        // $userLoginService = new UserLoginService(new FakeSessionManager());
+
+        $sessionManager = Mockery::spy(SessionManager::class);
+        $userLoginService = new UserLoginService($sessionManager);
+        $user = new User("username");
+        $userLoginService->manualLogin($user);
+
+        $logoutStatus = $userLoginService->logout($user);
+
+        $sessionManager->shouldHaveReceived()->logout($user->getUserName());
+        $this->assertEquals("Ok", $logoutStatus);
+        // $this->assertEquals($expectedUser, $this->userLoginService->getLoggedUsers()[0]);
     }
 }
